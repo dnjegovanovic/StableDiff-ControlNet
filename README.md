@@ -1,2 +1,2 @@
 # StableDiff-ControlNet
-The implementation of several variations of the Stable Diffusion model begins with basic building blocks such as DDPM, Unconditional and Conditional Stable Diffusion. After that, adding ControlNet along with the Stable Diffusion model, implementing the DiT model, a simple video generator using Stable Diffusion, and a brief explanation of DDIM.
+This project is an implementation of ControlNet based on the paper "Adding Conditional Control to Text-to-Image Diffusion Models" (https://arxiv.org/abs/2302.05543). It builds on core Stable Diffusion components such as DDPM and unconditional/conditional diffusion, then adds ControlNet conditioning and related experiments (DiT, a simple video generator, and a brief DDIM walkthrough).
