@@ -1,0 +1,10 @@
+paths:
+  repo_root: /home/dusan/Desktop/ML_PROJECTS/git/StableDiff-ControlNet
+  runs_dir: webapp_runs
+
+models:
+  - id: vqvae
+    name: VQ-VAE Trainer
+    description: Train the vector-quantized autoencoder on MNIST-style images.
+    script: scripts/train_vqvae_lightning.py
+    default_config: ControlNet/config_vqvae.yml

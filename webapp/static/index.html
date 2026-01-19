@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ControlNet Trainer</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <div class="page">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">ControlNet Lab</p>
+          <h1>Training Console</h1>
+          <p class="subtitle">
+            Launch VQ-VAE now, expand with more diffusion models later.
+          </p>
+        </div>
+        <div class="status-pill" id="status-pill">Idle</div>
+      </header>
+
+      <section class="grid">
+        <aside class="model-list" id="model-list">
+          <div class="model-placeholder">Loading models...</div>
+        </aside>
+
+        <section class="run-panel">
+          <div class="panel-header">
+            <h2 id="model-title">Select a model</h2>
+            <p id="model-desc">Pick a model to configure and run training.</p>
+          </div>
+
+          <div class="field">
+            <label for="config-path">Config file</label>
+            <input id="config-path" type="text" placeholder="ControlNet/config_vqvae.yml" />
+            <div class="hint" id="config-hint">
+              Uses the model default unless you override it here.
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="primary" id="run-btn">Run now</button>
+            <button class="ghost" id="queue-btn" disabled>Queue later</button>
+          </div>
+
+          <div class="run-meta">
+            <div>
+              <span>Run ID</span>
+              <strong id="run-id">-</strong>
+            </div>
+            <div>
+              <span>Model</span>
+              <strong id="run-model">-</strong>
+            </div>
+            <div>
+              <span>Status</span>
+              <strong id="run-status">Idle</strong>
+            </div>
+          </div>
+
+          <div class="log-panel">
+            <div class="log-header">
+              <span>Training log</span>
+              <button class="ghost small" id="clear-log">Clear</button>
+            </div>
+            <pre id="log-output"></pre>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
