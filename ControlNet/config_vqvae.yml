@@ -4,7 +4,7 @@ dataset_params:
   val_split: 0.1
   seed: 0
   im_channels: 1
-  batch_size: 16
+  batch_size: 32
   num_workers: 4
   image_extension: png
 
@@ -46,5 +46,7 @@ train_params:
   devices: 1
   log_every_n_steps: 50
   output_dir: ./outputs
+  use_tensorboard: true
+  tensorboard_dir: tensorboard
   save_recon_every_n_epochs: 1
   max_recon_images: 8

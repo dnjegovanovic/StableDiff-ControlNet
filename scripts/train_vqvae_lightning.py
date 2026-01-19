@@ -10,6 +10,7 @@ import pytorch_lightning as pl
 import torch
 import torchvision.utils as vutils
 import yaml
+from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 
@@ -89,19 +90,28 @@ class VQVAEDataModule(pl.LightningDataModule):
 
 
 class ReconstructionCallback(pl.Callback):
-    def __init__(self, output_dir: Path, every_n_epochs: int, max_images: int = 8):
+    def __init__(
+        self,
+        output_dir: Path,
+        every_n_epochs: int,
+        max_images: int = 8,
+        log_to_tensorboard: bool = True,
+        tensorboard_tag: str = "vqvae/reconstructions",
+    ):
         self.output_dir = output_dir
         self.every_n_epochs = every_n_epochs
         self.max_images = max_images
+        self.log_to_tensorboard = log_to_tensorboard
+        self.tensorboard_tag = tensorboard_tag
 
     def on_validation_epoch_end(self, trainer, pl_module):
         if self.every_n_epochs <= 0:
             return
         if (trainer.current_epoch + 1) % self.every_n_epochs != 0:
             return
-        if not trainer.val_dataloaders:
+        batch = _get_first_batch(trainer)
+        if batch is None:
             return
-        batch = next(iter(trainer.val_dataloaders))
         inputs = batch["x"].to(pl_module.device)
 
         with torch.no_grad():
@@ -114,6 +124,40 @@ class ReconstructionCallback(pl.Callback):
         output_path = self.output_dir / f"vqvae_recon_epoch_{trainer.current_epoch + 1}.png"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         vutils.save_image(grid, output_path)
+        if self.log_to_tensorboard:
+            tb_experiment = _get_tensorboard_experiment(trainer)
+            if tb_experiment is not None:
+                tb_experiment.add_image(
+                    self.tensorboard_tag,
+                    grid,
+                    global_step=trainer.current_epoch + 1,
+                    dataformats="CHW",
+                )
+
+
+def _get_first_batch(trainer: pl.Trainer) -> Optional[Dict[str, Any]]:
+    dataloaders = None
+    if trainer.val_dataloaders:
+        dataloaders = trainer.val_dataloaders
+    elif trainer.train_dataloader is not None:
+        dataloaders = trainer.train_dataloader
+    if dataloaders is None:
+        return None
+    if isinstance(dataloaders, (list, tuple)):
+        dataloader = dataloaders[0]
+    else:
+        dataloader = dataloaders
+    return next(iter(dataloader))
+
+
+def _get_tensorboard_experiment(trainer: pl.Trainer):
+    logger = trainer.logger
+    if logger is None or not hasattr(logger, "experiment"):
+        return None
+    experiment = logger.experiment
+    if hasattr(experiment, "add_image"):
+        return experiment
+    return None
 
 
 def load_config(path: Path) -> Dict[str, Any]:
@@ -166,6 +210,13 @@ def main() -> None:
     datamodule = VQVAEDataModule(dataset_cfg)
 
     output_dir = Path(train_cfg.get("output_dir", "outputs"))
+    use_tensorboard = bool(train_cfg.get("use_tensorboard", True))
+    tb_logger = None
+    if use_tensorboard:
+        tb_logger = TensorBoardLogger(
+            save_dir=str(output_dir),
+            name=str(train_cfg.get("tensorboard_dir", "tensorboard")),
+        )
     callbacks = []
     if train_cfg.get("save_recon_every_n_epochs", 0) > 0:
         callbacks.append(
@@ -173,6 +224,7 @@ def main() -> None:
                 output_dir / "vqvae_reconstructions",
                 every_n_epochs=train_cfg["save_recon_every_n_epochs"],
                 max_images=train_cfg.get("max_recon_images", 8),
+                log_to_tensorboard=use_tensorboard,
             )
         )
 
@@ -185,6 +237,7 @@ def main() -> None:
         log_every_n_steps=train_cfg.get("log_every_n_steps", 50),
         default_root_dir=str(output_dir),
         callbacks=callbacks,
+        logger=tb_logger,
     )
 
     trainer.fit(model, datamodule=datamodule)
