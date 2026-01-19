@@ -178,6 +178,15 @@ out = model(torch.randn(2, 3, 32, 32), t=5, cond_input=cond_input)
 pytest tests
 ```
 
+## VQ-VAE Lightning Training
+Use the provided config template and training script:
+
+```bash
+python scripts/train_vqvae_lightning.py --config config_vqvae.yml
+```
+
+Config template: `config_vqvae.yml`
+
 ## Notes
 - `time_emb_dim` must be even for sinusoidal embeddings.
 - `down_channels[0]` is used as the decoder output channel width.

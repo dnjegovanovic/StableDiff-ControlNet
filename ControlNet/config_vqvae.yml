@@ -1,0 +1,50 @@
+dataset_params:
+  train_root: /home/dusan/Desktop/ML_PROJECTS/ml_datasets/MNIST/mnist_images
+  val_root: null
+  val_split: 0.1
+  seed: 0
+  im_channels: 1
+  batch_size: 16
+  num_workers: 4
+  image_extension: png
+
+VQVAE:
+  down_channels: [32, 64, 128]
+  mid_channels: [128, 128]
+  down_sample: [True, True]
+  num_down_layers: 1
+  num_mid_layers: 1
+  num_up_layers: 1
+  attn_down: [True, True]
+  z_channels: 3
+  codebook_size: 20
+  norm_channels: 32
+  num_heads: 16
+  use_ema: true
+  ema_decay: 0.99
+  ema_eps: 1e-5
+
+train_params:
+  autoencoder_lr: 1e-4
+  weight_decay: 0.0
+  autoencoder_epochs: 10
+  autoencoder_acc_steps: 1
+  recon_loss: mse
+  codebook_weight: 1.0
+  commitment_beta: 0.25
+  use_discriminator: true
+  disc_start: 1000
+  disc_weight: 0.5
+  disc_lr: null
+  disc_betas: [0.5, 0.999]
+  use_lpips: false
+  perceptual_weight: 1.0
+  lpips_auto_download: true
+  lpips_weights_url: null
+  lpips_backbone_pretrained: true
+  precision: 32
+  devices: 1
+  log_every_n_steps: 50
+  output_dir: ./outputs
+  save_recon_every_n_epochs: 1
+  max_recon_images: 8

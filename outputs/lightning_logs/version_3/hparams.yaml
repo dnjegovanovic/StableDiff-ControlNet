@@ -1,0 +1,43 @@
+codebook_weight: 1.0
+commitment_weight: 0.25
+disc_betas: !!python/tuple
+- 0.5
+- 0.999
+disc_lr: null
+disc_start: 1000
+disc_weight: 0.5
+grad_accum_steps: 1
+input_channels: 1
+lpips_auto_download: true
+lpips_backbone_pretrained: true
+lpips_weights_url: null
+lr: 0.0001
+perceptual_weight: 1.0
+recon_loss: mse
+use_discriminator: true
+use_lpips: false
+vqvae_params:
+  attn_down:
+  - true
+  - true
+  codebook_size: 20
+  down_channels:
+  - 32
+  - 64
+  - 128
+  down_sample:
+  - true
+  - true
+  ema_decay: 0.99
+  ema_eps: 1e-5
+  mid_channels:
+  - 128
+  - 128
+  norm_channels: 32
+  num_down_layers: 1
+  num_heads: 16
+  num_mid_layers: 1
+  num_up_layers: 1
+  use_ema: true
+  z_channels: 3
+weight_decay: 0.0
