@@ -4,7 +4,7 @@ dataset_params:
   val_split: 0.1
   seed: 0
   im_channels: 1
-  batch_size: 32
+  batch_size: 64
   num_workers: 4
   image_extension: png
 
