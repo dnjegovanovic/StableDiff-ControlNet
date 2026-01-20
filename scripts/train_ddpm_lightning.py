@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pytorch_lightning as pl
 import torch
+import torchvision.utils as vutils
 import yaml
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader
@@ -121,6 +123,95 @@ class DDPMDataModule(pl.LightningDataModule):
         )
 
 
+class DDPMSampleCallback(pl.Callback):
+    def __init__(
+        self,
+        output_dir: Path,
+        every_n_epochs: int,
+        max_images: int = 8,
+        log_to_tensorboard: bool = True,
+        tensorboard_tag: str = "ddpm/samples",
+    ):
+        self.output_dir = output_dir
+        self.every_n_epochs = int(every_n_epochs)
+        self.max_images = int(max_images)
+        self.log_to_tensorboard = log_to_tensorboard
+        self.tensorboard_tag = tensorboard_tag
+
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: DDPMLightning):
+        if self.every_n_epochs <= 0:
+            return
+        if (trainer.current_epoch + 1) % self.every_n_epochs != 0:
+            return
+        if trainer.sanity_checking:
+            return
+        batch = _get_first_batch(trainer)
+        if batch is None or "x" not in batch:
+            return
+
+        images = batch["x"]
+        if not torch.is_tensor(images):
+            return
+        count = min(self.max_images, images.shape[0])
+        if count <= 0:
+            return
+        images = images[:count].to(pl_module.device)
+        raw_cond = batch.get("cond_input", {})
+
+        was_training = pl_module.training
+        pl_module.eval()
+        pl_module._freeze_vqvae()
+        with torch.no_grad():
+            latents, _ = pl_module.vqvae.encode(images)
+            cond_input = None
+            if pl_module.condition_config:
+                cond_input = pl_module._build_cond_input(raw_cond, latents)
+            sample_latents = pl_module.sample_latents(latents.shape, cond_input=cond_input)
+            decoded = pl_module.vqvae.decode(sample_latents)
+        if was_training:
+            pl_module.train()
+
+        decoded_vis = (decoded.detach().cpu().clamp(-1, 1) + 1) / 2
+        grid = vutils.make_grid(decoded_vis, nrow=count)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = self.output_dir / f"ddpm_sample_epoch_{trainer.current_epoch + 1}.png"
+        vutils.save_image(grid, output_path)
+        if self.log_to_tensorboard:
+            tb_experiment = _get_tensorboard_experiment(trainer)
+            if tb_experiment is not None:
+                tb_experiment.add_image(
+                    self.tensorboard_tag,
+                    grid,
+                    global_step=trainer.current_epoch + 1,
+                    dataformats="CHW",
+                )
+
+
+def _get_first_batch(trainer: pl.Trainer) -> Optional[Dict[str, Any]]:
+    dataloaders = None
+    if trainer.val_dataloaders:
+        dataloaders = trainer.val_dataloaders
+    elif trainer.train_dataloader is not None:
+        dataloaders = trainer.train_dataloader
+    if dataloaders is None:
+        return None
+    if isinstance(dataloaders, (list, tuple)):
+        dataloader = dataloaders[0]
+    else:
+        dataloader = dataloaders
+    return next(iter(dataloader))
+
+
+def _get_tensorboard_experiment(trainer: pl.Trainer):
+    logger = trainer.logger
+    if logger is None or not hasattr(logger, "experiment"):
+        return None
+    experiment = logger.experiment
+    if hasattr(experiment, "add_image"):
+        return experiment
+    return None
+
+
 def load_config(path: Path) -> Dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -172,6 +263,10 @@ def main() -> None:
     output_dir = Path(train_cfg.get("output_dir", "outputs"))
     if output_dir.name != "ddpm":
         output_dir = output_dir / "ddpm"
+    run_id = os.environ.get("CONTROLNET_RUN_ID")
+    samples_dir = output_dir / "ddpm_samples"
+    if run_id:
+        samples_dir = samples_dir / run_id
     use_tensorboard = bool(train_cfg.get("use_tensorboard", True))
     tb_logger = None
     if use_tensorboard:
@@ -180,6 +275,16 @@ def main() -> None:
             name=str(train_cfg.get("tensorboard_dir", "tensorboard")),
         )
 
+    callbacks = []
+    if train_cfg.get("save_samples_every_n_epochs", 0) > 0:
+        callbacks.append(
+            DDPMSampleCallback(
+                samples_dir,
+                every_n_epochs=train_cfg["save_samples_every_n_epochs"],
+                max_images=train_cfg.get("max_sample_images", 8),
+                log_to_tensorboard=use_tensorboard,
+            )
+        )
     trainer = pl.Trainer(
         max_epochs=train_cfg.get("ddpm_epochs", 1),
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
@@ -189,6 +294,7 @@ def main() -> None:
         log_every_n_steps=train_cfg.get("log_every_n_steps", 50),
         default_root_dir=str(output_dir),
         logger=tb_logger,
+        callbacks=callbacks,
     )
 
     trainer.fit(model, datamodule=datamodule)

@@ -54,3 +54,5 @@ train_params:
   vqvae_ckpt_path: ./outputs/tensorboard/version_1/checkpoints/epoch=9-step=15880.ckpt
   use_tensorboard: true
   tensorboard_dir: tensorboard
+  save_samples_every_n_epochs: 1
+  max_sample_images: 8

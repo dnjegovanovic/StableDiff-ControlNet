@@ -186,6 +186,21 @@ class DDPMLightning(pl.LightningModule):
         self.vqvae.eval()
         self.vqvae.requires_grad_(False)
 
+    @torch.no_grad()
+    def sample_latents(
+        self, shape: torch.Size, cond_input: Optional[Dict[str, torch.Tensor]] = None
+    ) -> torch.Tensor:
+        self._ensure_scheduler()
+        device = getattr(self, "device", torch.device("cpu"))
+        latents = torch.randn(shape, device=device)
+        for step in reversed(range(self.scheduler.num_timesteps)):
+            timestep = torch.full(
+                (shape[0],), step, device=device, dtype=torch.long
+            )
+            noise_pred = self(latents, timestep, cond_input=cond_input)
+            latents, _ = self.scheduler.sample_prev_timestep(latents, noise_pred, step)
+        return latents
+
     def _load_vqvae_checkpoint(self) -> None:
         ckpt_path = self.hparams.vqvae_ckpt_path
         if not ckpt_path:

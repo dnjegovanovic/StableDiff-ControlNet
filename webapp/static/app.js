@@ -4,6 +4,7 @@ const state = {
   run: null,
   logOffset: 0,
   lastRunId: null,
+  sampleUpdatedAt: null,
 };
 
 const statusPill = document.getElementById("status-pill");
@@ -12,18 +13,60 @@ const modelTitle = document.getElementById("model-title");
 const modelDesc = document.getElementById("model-desc");
 const configInput = document.getElementById("config-path");
 const runButton = document.getElementById("run-btn");
+const stopButton = document.getElementById("stop-btn");
 const queueButton = document.getElementById("queue-btn");
 const runId = document.getElementById("run-id");
 const runModel = document.getElementById("run-model");
 const runStatus = document.getElementById("run-status");
 const logOutput = document.getElementById("log-output");
 const clearLog = document.getElementById("clear-log");
+const samplePreview = document.getElementById("sample-preview");
+const sampleEmpty = document.getElementById("preview-empty");
+const sampleStatus = document.getElementById("preview-status");
 
 queueButton.addEventListener("click", (event) => event.preventDefault());
 
 clearLog.addEventListener("click", () => {
   logOutput.textContent = "";
   state.logOffset = 0;
+});
+
+samplePreview.addEventListener("load", () => {
+  samplePreview.classList.add("visible");
+  sampleEmpty.style.display = "none";
+  sampleStatus.textContent = "Latest sample loaded";
+});
+
+samplePreview.addEventListener("error", () => {
+  samplePreview.classList.remove("visible");
+  sampleEmpty.style.display = "block";
+  sampleStatus.textContent = "Waiting for samples";
+});
+
+stopButton.addEventListener("click", async () => {
+  if (!state.run) {
+    return;
+  }
+  stopButton.disabled = true;
+  const payload = { run_id: state.run.run_id || null };
+  try {
+    const response = await fetch("/api/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      alert(data.detail || "Failed to stop run.");
+      stopButton.disabled = false;
+      return;
+    }
+    state.run = data.run;
+    renderRunMeta(data.run);
+  } catch (error) {
+    alert("Failed to stop run.");
+    stopButton.disabled = false;
+  }
 });
 
 runButton.addEventListener("click", async () => {
@@ -127,16 +170,15 @@ function updateStatusUI(data) {
     state.run = null;
   }
 
-  if (status === "running") {
-    runButton.disabled = true;
-  } else {
-    runButton.disabled = false;
-  }
+  const isRunning = status === "running" || status === "stopping";
+  runButton.disabled = isRunning;
+  stopButton.disabled = !isRunning;
 
   if (state.run && state.run.run_id !== state.lastRunId) {
     state.lastRunId = state.run.run_id;
     state.logOffset = 0;
     logOutput.textContent = "";
+    resetPreview();
   }
 }
 
@@ -167,8 +209,41 @@ async function pollLogs() {
   }
 }
 
+function resetPreview() {
+  state.sampleUpdatedAt = null;
+  samplePreview.removeAttribute("src");
+  samplePreview.classList.remove("visible");
+  sampleEmpty.style.display = "block";
+  sampleStatus.textContent = "Waiting for samples";
+}
+
+async function pollSample() {
+  if (!state.run) {
+    resetPreview();
+    return;
+  }
+  try {
+    const response = await fetch(
+      `/api/sample?run_id=${encodeURIComponent(state.run.run_id)}`
+    );
+    const data = await response.json();
+    if (!data.available) {
+      resetPreview();
+      return;
+    }
+    if (data.updated_at !== state.sampleUpdatedAt) {
+      state.sampleUpdatedAt = data.updated_at;
+      samplePreview.src = data.image_url;
+    }
+  } catch (error) {
+    // Ignore preview polling errors.
+  }
+}
+
 loadModels();
 pollStatus();
 pollLogs();
+pollSample();
 setInterval(pollStatus, 2000);
 setInterval(pollLogs, 2000);
+setInterval(pollSample, 3000);

@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -26,6 +28,10 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 class RunRequest(BaseModel):
     config_path: Optional[str] = None
+
+
+class StopRequest(BaseModel):
+    run_id: Optional[str] = None
 
 
 @dataclass
@@ -91,7 +97,10 @@ def status() -> JSONResponse:
         run = _get_last_run_locked()
         if run is None:
             return JSONResponse({"status": "idle", "run": None})
-        state = "running" if active_run_id == run.run_id else run.status
+        if active_run_id == run.run_id:
+            state = "stopping" if run.status == "stopping" else "running"
+        else:
+            state = run.status
         return JSONResponse({"status": state, "run": run.to_dict()})
 
 
@@ -103,6 +112,54 @@ def run_model(model_id: str, request: RunRequest) -> JSONResponse:
         raise HTTPException(status_code=404, detail="Unknown model.")
     run_state = _launch_run(model, request.config_path, config)
     return JSONResponse({"status": "running", "run": run_state.to_dict()})
+
+
+@app.get("/api/sample")
+def sample(run_id: Optional[str] = Query(default=None)) -> JSONResponse:
+    with run_lock:
+        run = _get_run_locked(run_id)
+    if run is None:
+        return JSONResponse({"available": False})
+    config = _load_webapp_config()
+    sample_path = _get_latest_sample_path(run, config)
+    if sample_path is None:
+        return JSONResponse({"available": False})
+    mtime = sample_path.stat().st_mtime
+    updated_at = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+    image_url = f"/api/sample_image?run_id={run.run_id}&ts={int(mtime)}"
+    return JSONResponse(
+        {"available": True, "updated_at": updated_at, "image_url": image_url}
+    )
+
+
+@app.get("/api/sample_image")
+def sample_image(run_id: Optional[str] = Query(default=None)) -> FileResponse:
+    with run_lock:
+        run = _get_run_locked(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    config = _load_webapp_config()
+    sample_path = _get_latest_sample_path(run, config)
+    if sample_path is None:
+        raise HTTPException(status_code=404, detail="No samples available.")
+    return FileResponse(sample_path, media_type="image/png")
+
+
+@app.post("/api/stop")
+def stop_run(request: StopRequest) -> JSONResponse:
+    with run_lock:
+        run = _get_run_locked(request.run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found.")
+        if active_run_id != run.run_id or active_process is None:
+            raise HTTPException(status_code=409, detail="No active run to stop.")
+        if active_process.poll() is not None:
+            raise HTTPException(status_code=409, detail="Run is already finished.")
+        run.status = "stopping"
+        process = active_process
+
+    _request_stop(process)
+    return JSONResponse({"status": "stopping", "run": run.to_dict()})
 
 
 @app.get("/api/logs")
@@ -203,6 +260,7 @@ def _launch_run(
 
         env = os.environ.copy()
         env["PYTHONPATH"] = str(repo_root)
+        env["CONTROLNET_RUN_ID"] = run_id
 
         log_file = log_path.open("ab")
         process = subprocess.Popen(
@@ -211,6 +269,7 @@ def _launch_run(
             stdout=log_file,
             stderr=subprocess.STDOUT,
             env=env,
+            start_new_session=True,
         )
         log_file.close()
 
@@ -249,7 +308,10 @@ def _watch_process(run_id: str, process: subprocess.Popen) -> None:
             return
         run_state.return_code = return_code
         run_state.end_time = _timestamp()
-        run_state.status = "finished" if return_code == 0 else "failed"
+        if run_state.status == "stopping":
+            run_state.status = "stopped"
+        else:
+            run_state.status = "finished" if return_code == 0 else "failed"
         if active_run_id == run_id:
             active_run_id = None
             active_process = None
@@ -275,3 +337,61 @@ def _read_log_chunk(path: Path, offset: int, max_bytes: int = 65536) -> tuple[st
         data = handle.read(max_bytes)
         new_offset = handle.tell()
     return data.decode("utf-8", errors="replace"), new_offset
+
+
+def _get_latest_sample_path(
+    run: RunState, config: Dict[str, Any]
+) -> Optional[Path]:
+    repo_root = _resolve_repo_root(config)
+    config_path = Path(run.config_path)
+    if not config_path.exists():
+        return None
+    try:
+        with config_path.open("r", encoding="utf-8") as handle:
+            run_config = yaml.safe_load(handle) or {}
+    except yaml.YAMLError:
+        return None
+    train_cfg = run_config.get("train_params", {})
+    output_dir_value = train_cfg.get("output_dir", "outputs")
+    output_dir = _resolve_path(repo_root, str(output_dir_value))
+    if output_dir.name != "ddpm":
+        output_dir = output_dir / "ddpm"
+    samples_dir = output_dir / "ddpm_samples"
+    if run.run_id:
+        samples_dir = samples_dir / run.run_id
+    if not samples_dir.exists():
+        return None
+    sample_files = sorted(
+        samples_dir.glob("*.png"), key=lambda path: path.stat().st_mtime
+    )
+    if not sample_files:
+        return None
+    return sample_files[-1]
+
+
+def _request_stop(process: subprocess.Popen, timeout: float = 5.0) -> None:
+    try:
+        if process.poll() is not None:
+            return
+        if process.pid and hasattr(os, "killpg"):
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+    except OSError:
+        return
+
+    def _ensure_killed() -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                return
+            time.sleep(0.2)
+        try:
+            if process.pid and hasattr(os, "killpg"):
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except OSError:
+            return
+
+    threading.Thread(target=_ensure_killed, daemon=True).start()
