@@ -1,0 +1,56 @@
+dataset_params:
+  train_root: /home/dusan/Desktop/ML_PROJECTS/ml_datasets/MNIST/mnist_images
+  val_root: null
+  val_split: 0.1
+  seed: 0
+  im_channels: 1
+  batch_size: 32
+  num_workers: 4
+  image_extension: png
+  condition_config: null
+
+VQVAE:
+  down_channels: [32, 64, 128]
+  mid_channels: [128, 128]
+  down_sample: [True, True]
+  num_down_layers: 1
+  num_mid_layers: 1
+  num_up_layers: 1
+  attn_down: [True, True]
+  z_channels: 3
+  codebook_size: 20
+  norm_channels: 32
+  num_heads: 16
+  use_ema: true
+  ema_decay: 0.99
+  ema_eps: 1e-5
+
+UnetParams:
+  down_channels: [64, 128, 256]
+  mid_channels: [256, 128]
+  down_sample: [False, False]
+  attn_down: [True, True]
+  time_emb_dim: 256
+  im_channels: 3
+  num_heads: 16
+  num_down_layers: 1
+  num_mid_layers: 1
+  num_up_layers: 1
+
+ddpm_params:
+  num_timesteps: 1000
+  beta_start: 0.0015
+  beta_end: 0.0195
+
+train_params:
+  ddpm_lr: 1.0e-4
+  weight_decay: 0.0
+  ddpm_epochs: 10
+  accumulate_grad_batches: 1
+  precision: 32
+  devices: 1
+  log_every_n_steps: 50
+  output_dir: ./outputs/ddpm
+  vqvae_ckpt_path: ./outputs/tensorboard/version_1/checkpoints/epoch=9-step=15880.ckpt
+  use_tensorboard: true
+  tensorboard_dir: tensorboard

@@ -77,6 +77,9 @@ class UNet(nn.Module):  # Defines the core UNet architecture used by the diffusi
         self.num_up_layers = unet_config[
             "num_up_layers"
         ]  # Number of residual layers per decoder block
+        self.num_heads = unet_config.get(
+            "num_heads", 4
+        )  # Attention heads used across UNet blocks
 
         assert (
             self.mid_channels[0] == self.down_channels[-1]
@@ -201,6 +204,7 @@ class UNet(nn.Module):  # Defines the core UNet architecture used by the diffusi
                         idx + 1
                     ],  # Number of channels after the block
                     time_emb_dim=self.time_emb_dim,  # Dimension of timestep embedding injected into the block
+                    num_heads=self.num_heads,
                     down_sample=self.down_sample[
                         idx
                     ],  # Whether to reduce spatial resolution at the end of the block
@@ -230,6 +234,7 @@ class UNet(nn.Module):  # Defines the core UNet architecture used by the diffusi
                         idx + 1
                     ],  # Output channel count from the bottleneck block
                     self.time_emb_dim,  # Dimension of timestep embedding used in the block
+                    num_heads=self.num_heads,
                     num_layers=self.num_mid_layers,  # Number of residual layers stacked inside the bottleneck
                     cross_attn=self.text_cond,
                     cross_cont_dim=self.text_embed_dim,
@@ -259,6 +264,7 @@ class UNet(nn.Module):  # Defines the core UNet architecture used by the diffusi
                     out_channels=out_channels,  # Channels produced by this decoder stage
                     skip_channels=skip_channels,  # Channels from the skip connection to concatenate
                     time_emb_dim=self.time_emb_dim,  # Timestep embedding dimensionality injected into the block
+                    num_heads=self.num_heads,
                     up_sample=self.down_sample[
                         idx
                     ],  # Mirrors encoder downsampling flag to decide on upsampling

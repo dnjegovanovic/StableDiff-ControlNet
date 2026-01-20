@@ -8,3 +8,8 @@ models:
     description: Train the vector-quantized autoencoder on MNIST-style images.
     script: scripts/train_vqvae_lightning.py
     default_config: ControlNet/config_vqvae.yml
+  - id: ddpm
+    name: DDPM Trainer
+    description: Train a UNet denoiser on VQ-VAE latents for diffusion.
+    script: scripts/train_ddpm_lightning.py
+    default_config: ControlNet/config_ddpm.yml

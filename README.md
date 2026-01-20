@@ -182,10 +182,27 @@ pytest tests
 Use the provided config template and training script:
 
 ```bash
-python scripts/train_vqvae_lightning.py --config config_vqvae.yml
+python scripts/train_vqvae_lightning.py --config ControlNet/config_vqvae.yml
 ```
 
-Config template: `config_vqvae.yml`
+Config template: `ControlNet/config_vqvae.yml`
+
+TensorBoard logging is enabled by default. Logs are written under `output_dir/tensorboard`
+as configured in `train_params`.
+
+## Web UI (Trainer Console)
+Launch a simple web UI to start training runs one-at-a-time and tail logs:
+
+```bash
+pip install -r webapp/requirements.txt
+python -m uvicorn webapp.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000` and click "Run now" for the selected model.
+
+To add more models later, edit `webapp/webapp_config.yml`:
+- `paths.repo_root` should point to this repo if you run the server from elsewhere.
+- Add more entries under `models` with `id`, `script`, and `default_config`.
 
 ## Notes
 - `time_emb_dim` must be even for sinusoidal embeddings.
